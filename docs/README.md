@@ -1,12 +1,12 @@
 # ClaimGraph documentation
 
-Public documentation is intentionally concise and describes the current
-product rather than implementation-session history.
+Public documentation covers current product behavior, operating boundaries,
+deployment, evaluation, privacy, and security.
 
 - [Architecture](architecture.md) — graph pipeline, lifecycle, storage, and
   public/private boundaries.
 - [Deployment](deployment.md) — supported deployment shapes and the production
-  rehearsal checklist.
+  validation checklist.
 - [Evaluation](evaluation.md) — graph-quality and trust criteria.
 - [Privacy](../PRIVACY.md) — submitted content, sharing, processing, retention,
   and deletion.
