@@ -557,8 +557,8 @@ export function QuestionComposer({
               />
             </div> : (
               <p className="field__hint">
-                Hosted full mode accepts public links but keeps file intake off
-                until provider-side deletion is durably retryable.
+                File uploads are temporarily unavailable. Add public source
+                links to continue.
               </p>
             )}
 
@@ -646,8 +646,8 @@ export function QuestionComposer({
         onChange={setFiles}
       /> : (
         <p className="field__hint">
-          Hosted full mode accepts public links but keeps file intake off until
-          provider-side deletion is durably retryable.
+          File uploads are temporarily unavailable. Add public source links to
+          continue.
         </p>
       )}
 

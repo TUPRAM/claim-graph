@@ -92,10 +92,10 @@ Operationally, verify:
 - expired cleanup leases can be reclaimed;
 - a failed object-storage delete never becomes an untracked orphan.
 
-## Release rehearsal
+## Deployment validation
 
-Use an isolated staging environment with production-equivalent services. The
-rehearsal should cover:
+Before a release, use an isolated staging environment with
+production-equivalent services and validate:
 
 1. Create a workspace and retain owner mutation authority.
 2. Open the same URL in a clean browser and confirm it is read-only.
