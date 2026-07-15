@@ -1,0 +1,34 @@
+ClaimGraph Source-Available Evaluation License
+
+Copyright (c) 2026 TUPRAM. All rights reserved.
+
+Subject to the restrictions below, TUPRAM grants you a non-exclusive,
+non-transferable, and non-sublicensable license to download,
+reproduce, build, and run an unmodified copy of ClaimGraph solely for your own
+internal, non-commercial evaluation.
+
+You may not, without prior written permission from TUPRAM:
+
+1. modify the software or create derivative works;
+2. deploy or use the software in production or to provide a service to others;
+3. publish, distribute, sublicense, sell, rent, lease, or otherwise transfer
+   the software or any substantial portion of it;
+4. use the software for commercial purposes; or
+5. remove or alter copyright, license, trademark, or attribution notices.
+
+The evaluation license terminates automatically if you breach these terms. On
+termination, you must stop using the software and delete copies in your
+possession or control.
+
+Except for the narrow evaluation permission above, access to the source code
+does not transfer any ownership right or grant any patent, trademark,
+copyright, or other intellectual-property license.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING
+FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OF THE SOFTWARE.
+
+For licensing inquiries, contact the repository owner through the GitHub
+profile associated with TUPRAM.

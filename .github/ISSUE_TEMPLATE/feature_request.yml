@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a focused product improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem should ClaimGraph solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful change.
+    validations:
+      required: true
+  - type: textarea
+    id: graph
+    attributes:
+      label: Graph and provenance impact
+      description: How does this affect readability, claims, counterclaims, gaps, evidence, or source inspection?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: This keeps the graph as the primary output.
+          required: true
+        - label: This does not weaken provenance or public-data boundaries.
+          required: true
