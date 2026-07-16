@@ -23,7 +23,7 @@ import {
 const SOURCE_PANEL_ANIMATION_MS = 190;
 const FILE_SECTION_EMPHASIS_MS = 1200;
 
-type SourceFocusTarget = "links" | "files" | "panel";
+type SourceFocusTarget = "links" | "files" | "settings" | "panel";
 
 export type QuestionComposerRuntime = Pick<
   ClaimGraphRuntimeInfo,
@@ -104,16 +104,48 @@ export function QuestionComposer({
   const [files, setFiles] = useState<DraftWorkspaceFile[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const sourceUrls = sourceUrlsText
-    .split(/\r?\n/)
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .slice(0, 3);
-  const attachedSourceCount = sourceUrls.length + files.length;
+  const supportsUrlIntake = runtime.supportsUrlIntake;
   const supportsFileIntake = runtime.supportsFileIntake !== false;
+  const supportsManualIntake = supportsUrlIntake || supportsFileIntake;
+  const supportsSourceConfiguration =
+    supportsManualIntake || runtime.supportsWebSearch;
+  const sourceUrls = supportsUrlIntake
+    ? sourceUrlsText
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(0, 3)
+    : [];
+  const attachedSourceCount =
+    sourceUrls.length + (supportsFileIntake ? files.length : 0);
   const sourceSummary = attachedSourceCount
     ? `${attachedSourceCount} source${attachedSourceCount === 1 ? "" : "s"} added`
-    : "Sources optional";
+    : supportsManualIntake
+      ? "Sources optional"
+      : runtime.supportsWebSearch
+        ? "Web search available"
+        : "Question-only";
+  const sourceToggleLabel = supportsUrlIntake
+    ? supportsFileIntake
+      ? "Add source links or files"
+      : "Add source links"
+    : supportsFileIntake
+      ? "Add source files"
+      : "Configure web source search";
+  const sourcePanelTitle = supportsUrlIntake
+    ? supportsFileIntake
+      ? "Add sources"
+      : "Add source links"
+    : supportsFileIntake
+      ? "Add source files"
+      : "Web source settings";
+  const sourcePanelDescription = supportsUrlIntake
+    ? supportsFileIntake
+      ? "Links and files keep the argument map tied to inspectable evidence. You can also continue question-only."
+      : "Public links keep the argument map tied to inspectable evidence. You can also continue question-only."
+    : supportsFileIntake
+      ? "Uploaded files keep the argument map tied to inspectable evidence. You can also continue question-only."
+      : "ClaimGraph can search the public web from your question. Adjust how it prioritizes sources, or continue with the defaults.";
 
   useEffect(() => {
     if (!sourcePanelMounted || !showSources) {
@@ -141,6 +173,15 @@ export function QuestionComposer({
 
       if (sourceFocusTarget === "links" && runtime.supportsUrlIntake) {
         sourceLinksTextareaRef.current?.focus({ preventScroll: true });
+        return;
+      }
+
+      if (sourceFocusTarget === "settings") {
+        sourcePanel
+          ?.querySelector<HTMLElement>(
+            ".settings-grid input, .settings-grid select"
+          )
+          ?.focus({ preventScroll: true });
         return;
       }
 
@@ -184,7 +225,8 @@ export function QuestionComposer({
     };
   }, []);
 
-  const advancedSettings = showAdvanced && runtime.supportsWebSearch ? (
+  const advancedSettings =
+    runtime.supportsWebSearch && (showAdvanced || !supportsManualIntake) ? (
     <div className="settings-grid">
       <label className="field">
         <span className="field__label">Max web sources</span>
@@ -237,7 +279,7 @@ export function QuestionComposer({
         Include opposing evidence
       </label>
     </div>
-  ) : null;
+    ) : null;
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -259,7 +301,7 @@ export function QuestionComposer({
         })
       );
 
-      for (const item of files) {
+      for (const item of supportsFileIntake ? files : []) {
         formData.append("files", item.file);
       }
 
@@ -342,6 +384,14 @@ export function QuestionComposer({
       return;
     }
 
+    if (!supportsManualIntake) {
+      if (runtime.supportsWebSearch) {
+        openSources(returnTarget, "settings");
+      }
+
+      return;
+    }
+
     clearCloseTimer();
     setSourcePanelMounted(false);
     setSourceMenuOpen(true);
@@ -391,11 +441,13 @@ export function QuestionComposer({
               ref={sourceToggleRef}
               type="button"
               className="composer-command__source-toggle"
-              aria-label={showSources || sourceMenuOpen ? "Close source options" : "Add source links or files"}
+              aria-label={showSources || sourceMenuOpen ? "Close source options" : sourceToggleLabel}
               aria-expanded={showSources || sourceMenuOpen}
               aria-controls={sourceMenuOpen ? `${sourcePanelId}-menu` : sourcePanelId}
               data-state={showSources || sourceMenuOpen ? "open" : "closed"}
               onClick={(event) => toggleSourceMenu(event.currentTarget)}
+              hidden={!supportsSourceConfiguration}
+              style={!supportsSourceConfiguration ? { display: "none" } : undefined}
             >
               <span className="composer-command__source-glyph" aria-hidden="true" />
             </button>
@@ -426,7 +478,7 @@ export function QuestionComposer({
           </button>
         </div>
 
-        {sourceMenuOpen ? (
+        {sourceMenuOpen && supportsManualIntake ? (
           <div
             id={`${sourcePanelId}-menu`}
             ref={sourceMenuRef}
@@ -448,7 +500,7 @@ export function QuestionComposer({
               </span>
               <span>Add files</span>
             </button> : null}
-            <button
+            {supportsUrlIntake ? <button
               type="button"
               className="composer-command__source-option composer-command__source-option--links"
               role="menuitem"
@@ -461,7 +513,7 @@ export function QuestionComposer({
                 </svg>
               </span>
               <span>Add link</span>
-            </button>
+            </button> : null}
           </div>
         ) : null}
 
@@ -498,17 +550,14 @@ export function QuestionComposer({
             aria-hidden={!showSources}
             aria-labelledby={sourcePanelTitleId}
             aria-describedby={sourcePanelDescriptionId}
-            aria-label="Source links and files"
+            aria-label={sourcePanelTitle}
             onKeyDown={onSourcePanelKeyDown}
           >
             <span className="composer-command__sheet-handle" aria-hidden="true" />
             <div className="composer-command__source-header">
               <div>
-                <h2 id={sourcePanelTitleId}>Add sources</h2>
-                <p id={sourcePanelDescriptionId}>
-                  Links and files keep the argument map tied to inspectable
-                  evidence. You can also continue question-only.
-                </p>
+                <h2 id={sourcePanelTitleId}>{sourcePanelTitle}</h2>
+                <p id={sourcePanelDescriptionId}>{sourcePanelDescription}</p>
               </div>
               <button
                 type="button"
@@ -555,20 +604,17 @@ export function QuestionComposer({
                 disabled={isSubmitting}
                 onChange={setFiles}
               />
-            </div> : (
-              <p className="field__hint">
-                File uploads are temporarily unavailable. Add public source
-                links to continue.
-              </p>
-            )}
+            </div> : null}
 
-            {runtime.supportsWebSearch ? (
+            {runtime.supportsWebSearch && supportsManualIntake ? (
               <button
                 type="button"
                 className="button button--ghost button--small"
                 onClick={() => setShowAdvanced((value: boolean) => !value)}
               >
-                {showAdvanced ? "Hide source settings" : "Show source settings"}
+                {showAdvanced
+                  ? "Hide web search settings"
+                  : "Show web search settings"}
               </button>
             ) : null}
 
@@ -639,25 +685,32 @@ export function QuestionComposer({
         </label>
       ) : null}
 
-      {supportsFileIntake ? <FileDropzone
-        files={files}
-        maxFiles={defaultSettings.maxFiles}
-        disabled={isSubmitting}
-        onChange={setFiles}
-      /> : (
-        <p className="field__hint">
-          File uploads are temporarily unavailable. Add public source links to
-          continue.
-        </p>
-      )}
+      {supportsFileIntake ? (
+        <FileDropzone
+          files={files}
+          maxFiles={defaultSettings.maxFiles}
+          disabled={isSubmitting}
+          onChange={setFiles}
+        />
+      ) : null}
 
-      {runtime.supportsWebSearch ? (
+      {!supportsManualIntake ? (
+        <p className="field__hint">
+          {runtime.supportsWebSearch
+            ? "ClaimGraph will search the public web from your question. You can tune the source search below or keep the defaults."
+            : "This runtime accepts question-only workspaces."}
+        </p>
+      ) : null}
+
+      {runtime.supportsWebSearch && supportsManualIntake ? (
         <button
           type="button"
           className="button button--ghost button--small"
           onClick={() => setShowAdvanced((value: boolean) => !value)}
         >
-          {showAdvanced ? "Hide source settings" : "Show source settings"}
+          {showAdvanced
+            ? "Hide web search settings"
+            : "Show web search settings"}
         </button>
       ) : null}
 
