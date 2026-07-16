@@ -4,6 +4,10 @@
     {
       "path": "/api/internal/cleanup",
       "schedule": "17 3 * * *"
+    },
+    {
+      "path": "/api/internal/notify",
+      "schedule": "47 7 * * *"
     }
   ]
 }

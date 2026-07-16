@@ -262,3 +262,34 @@ CREATE TABLE IF NOT EXISTS claimgraph_provider_leases (
 
 CREATE INDEX IF NOT EXISTS claimgraph_provider_lease_expiry_idx
   ON claimgraph_provider_leases (expires_at asc);
+
+CREATE TABLE IF NOT EXISTS claimgraph_operational_event_buckets (
+  event_type text not null,
+  window_started_at timestamptz not null,
+  occurrence_count bigint not null,
+  value_total bigint not null,
+  last_seen_at timestamptz not null,
+  expires_at timestamptz not null,
+  primary key (event_type, window_started_at)
+);
+
+CREATE INDEX IF NOT EXISTS claimgraph_operational_event_expiry_idx
+  ON claimgraph_operational_event_buckets (expires_at asc);
+
+CREATE TABLE IF NOT EXISTS claimgraph_operational_notification_state (
+  id text primary key,
+  last_status text not null,
+  last_fingerprint text not null,
+  last_attempt_at timestamptz,
+  last_success_at timestamptz,
+  last_failure_at timestamptz,
+  last_failure_code text,
+  delivery_lease_id text,
+  delivery_lease_expires_at timestamptz
+);
+
+ALTER TABLE claimgraph_operational_notification_state
+  ADD COLUMN IF NOT EXISTS delivery_lease_id text;
+
+ALTER TABLE claimgraph_operational_notification_state
+  ADD COLUMN IF NOT EXISTS delivery_lease_expires_at timestamptz;

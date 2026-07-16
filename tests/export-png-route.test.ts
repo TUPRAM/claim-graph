@@ -5,6 +5,7 @@ import { GET as getDevGraphRoute } from "@/app/api/dev/workspaces/[workspaceId]/
 import { POST as exportPngRoute } from "@/app/api/workspaces/[workspaceId]/export/png/route";
 import { POST as exportMarkdownRoute } from "@/app/api/workspaces/[workspaceId]/export/markdown/route";
 import { resetStoreForTests } from "@/lib/server/store";
+import { getOperationalEventSummary } from "@/lib/server/operational-events";
 import type { WorkspaceGraphPayload } from "@/types/claimgraph";
 import { withDevSession } from "./helpers/dev-auth";
 
@@ -112,6 +113,31 @@ describe("workspace PNG export route", () => {
       viewportWidth: 1120,
       viewportHeight: 640
     });
+  });
+
+  it("counts a failed browser capture separately from completed exports", async () => {
+    const response = await exportPngRoute(
+      withDevSession(new Request("http://localhost/api/workspaces/demo/export/png", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: "http://localhost"
+        },
+        body: JSON.stringify({
+          success: false,
+          errorMessage: "The browser capture failed."
+        })
+      })),
+      workspaceRouteContext("demo")
+    );
+
+    expect(response.status).toBe(200);
+    await expect(getOperationalEventSummary()).resolves.toEqual([
+      expect.objectContaining({
+        eventType: "export-failed",
+        occurrenceCount: 1
+      })
+    ]);
   });
 
   it("replays a Markdown idempotency key without persisting another export", async () => {
