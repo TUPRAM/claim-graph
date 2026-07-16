@@ -610,6 +610,37 @@ describe("durable public-beta controls", () => {
       ...base,
       CLAIMGRAPH_OPERATIONS_WEBHOOK_URL: "http://operations.example.test/hook"
     }).missingConfiguration).toContain("CLAIMGRAPH_OPERATIONS_WEBHOOK_URL");
+
+    const githubIssueBase: NodeJS.ProcessEnv = {
+      ...base,
+      CLAIMGRAPH_OPERATIONS_WEBHOOK_FORMAT: "github-issue",
+      CLAIMGRAPH_OPERATIONS_WEBHOOK_URL:
+        "https://api.github.com/repos/example/private-operations/issues",
+      CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN: ""
+    };
+    expect(getPublicBetaSafetyConfiguration(githubIssueBase)).toMatchObject({
+      ready: false,
+      operationsNotificationConfigured: false,
+      missingConfiguration: ["CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN"]
+    });
+    expect(getPublicBetaSafetyConfiguration({
+      ...githubIssueBase,
+      CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN: "short-lived-issues-token"
+    })).toMatchObject({
+      ready: true,
+      operationsNotificationConfigured: true,
+      missingConfiguration: []
+    });
+    expect(getPublicBetaSafetyConfiguration({
+      ...githubIssueBase,
+      CLAIMGRAPH_OPERATIONS_WEBHOOK_URL:
+        "https://operations.example.test/not-github",
+      CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN: "short-lived-issues-token"
+    }).missingConfiguration).toContain("CLAIMGRAPH_OPERATIONS_WEBHOOK_URL");
+    expect(getPublicBetaSafetyConfiguration({
+      ...base,
+      CLAIMGRAPH_OPERATIONS_WEBHOOK_FORMAT: "unsupported"
+    }).missingConfiguration).toContain("CLAIMGRAPH_OPERATIONS_WEBHOOK_FORMAT");
   });
 
   it("fails closed for hosted full-mode files until provider cleanup is durable", () => {

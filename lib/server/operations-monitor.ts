@@ -12,11 +12,17 @@ import {
 } from "@/lib/server/operational-events";
 import { getProductionHealthSummary } from "@/lib/server/production-health";
 import { getProviderCapacitySnapshot } from "@/lib/server/public-beta-control-store";
-import { hasValidOperationsWebhookUrl } from "@/lib/server/public-beta-policy";
+import {
+  validateOperationsNotificationConfiguration,
+  type OperationsWebhookFormat
+} from "@/lib/server/public-beta-policy";
 import { getCleanupBacklogSummary } from "@/lib/server/retention-cleanup";
 
 const HOUR_MS = 60 * 60 * 1_000;
 const DAY_MS = 24 * HOUR_MS;
+const GITHUB_API_VERSION = "2022-11-28";
+const GITHUB_ISSUE_TITLE_MAX_CHARS = 120;
+const GITHUB_ISSUE_BODY_MAX_CHARS = 24_000;
 
 export interface OperationalAlert {
   code: string;
@@ -73,8 +79,10 @@ function boundedInteger(
 
 function webhookConfiguration(env: NodeJS.ProcessEnv = process.env) {
   const rawUrl = env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL?.trim() ?? "";
+  const validation = validateOperationsNotificationConfiguration(env);
   return {
-    url: hasValidOperationsWebhookUrl(rawUrl) ? rawUrl : null,
+    format: validation.format,
+    url: validation.configured ? rawUrl : null,
     bearerToken: env.CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN?.trim() || null,
     timeoutMs: boundedInteger(
       env.CLAIMGRAPH_OPERATIONS_WEBHOOK_TIMEOUT_MS,
@@ -86,6 +94,67 @@ function webhookConfiguration(env: NodeJS.ProcessEnv = process.env) {
       60,
       { min: 5, max: 24 * 60 }
     ) * 60_000
+  };
+}
+
+type OperationsNotificationPayload = Omit<OperationsMonitorSnapshot, "notification"> & {
+  kind: "alert" | "recovery";
+};
+
+function sanitizeBoundedText(value: string, maxChars: number) {
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/gu, " ")
+    .replace(/\r\n?/gu, "\n")
+    .trim()
+    .slice(0, maxChars);
+}
+
+function githubIssuePayload(payload: OperationsNotificationPayload) {
+  const title = sanitizeBoundedText(
+    payload.kind === "recovery"
+      ? "[ClaimGraph operations] Recovery"
+      : `[ClaimGraph operations] ${payload.status.toUpperCase()} alert`,
+    GITHUB_ISSUE_TITLE_MAX_CHARS
+  );
+  const serializedAggregate = JSON.stringify(payload, null, 2)
+    .replace(/```/gu, "` ` `");
+  const body = sanitizeBoundedText([
+    "ClaimGraph privacy-minimal aggregate notification.",
+    "",
+    "```json",
+    serializedAggregate,
+    "```"
+  ].join("\n"), GITHUB_ISSUE_BODY_MAX_CHARS);
+
+  return { title, body };
+}
+
+function deliveryRequest(input: {
+  format: OperationsWebhookFormat;
+  bearerToken: string | null;
+  payload: OperationsNotificationPayload;
+}): { headers: Record<string, string>; body: string } {
+  if (input.format === "github-issue") {
+    return {
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${input.bearerToken}`,
+        "Content-Type": "application/json",
+        "User-Agent": "ClaimGraph-Operations-Notifier/1.0",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION
+      },
+      body: JSON.stringify(githubIssuePayload(input.payload))
+    };
+  }
+
+  return {
+    headers: {
+      "Content-Type": "application/json",
+      ...(input.bearerToken
+        ? { Authorization: `Bearer ${input.bearerToken}` }
+        : {})
+    },
+    body: JSON.stringify(input.payload)
   };
 }
 
@@ -350,7 +419,7 @@ export async function deliverOperationsNotification(input?: {
   }
 
   const attemptedAt = now.toISOString();
-  const payload = {
+  const payload: OperationsNotificationPayload = {
     schemaVersion: 1,
     kind: recovery ? "recovery" : "alert",
     checkedAt: snapshot.checkedAt,
@@ -361,18 +430,18 @@ export async function deliverOperationsNotification(input?: {
     provider: snapshot.provider,
     events: snapshot.events
   };
+  const request = deliveryRequest({
+    format: config.format!,
+    bearerToken: config.bearerToken,
+    payload
+  });
   let failureCode: string | null = null;
 
   try {
     const response = await (input?.fetchImpl ?? fetch)(config.url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(config.bearerToken
-          ? { Authorization: `Bearer ${config.bearerToken}` }
-          : {})
-      },
-      body: JSON.stringify(payload),
+      headers: request.headers,
+      body: request.body,
       cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(config.timeoutMs)

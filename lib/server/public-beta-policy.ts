@@ -33,6 +33,73 @@ export function hasValidOperationsWebhookUrl(value: string | undefined) {
   }
 }
 
+export const OPERATIONS_WEBHOOK_FORMATS = [
+  "generic",
+  "github-issue"
+] as const;
+
+export type OperationsWebhookFormat =
+  (typeof OPERATIONS_WEBHOOK_FORMATS)[number];
+
+export function parseOperationsWebhookFormat(
+  value: string | undefined
+): OperationsWebhookFormat | null {
+  const normalized = value?.trim().toLowerCase();
+
+  if (!normalized) {
+    return "generic";
+  }
+
+  return OPERATIONS_WEBHOOK_FORMATS.find((format) => format === normalized) ?? null;
+}
+
+export function hasValidGitHubIssueApiUrl(value: string | undefined) {
+  if (!hasValidOperationsWebhookUrl(value)) {
+    return false;
+  }
+
+  const url = new URL(value!.trim());
+  const segments = url.pathname.split("/").filter(Boolean);
+
+  return url.hostname === "api.github.com" &&
+    url.port === "" &&
+    url.search === "" &&
+    url.hash === "" &&
+    segments.length === 4 &&
+    segments[0] === "repos" &&
+    Boolean(segments[1]) &&
+    Boolean(segments[2]) &&
+    segments[3] === "issues";
+}
+
+export function validateOperationsNotificationConfiguration(
+  env: NodeJS.ProcessEnv = process.env
+) {
+  const format = parseOperationsWebhookFormat(
+    env.CLAIMGRAPH_OPERATIONS_WEBHOOK_FORMAT
+  );
+  const url = env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL?.trim() ?? "";
+  const bearerConfigured = Boolean(
+    env.CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN?.trim()
+  );
+  const urlValid = format === "github-issue"
+    ? hasValidGitHubIssueApiUrl(url)
+    : hasValidOperationsWebhookUrl(url);
+  const bearerRequired = format === "github-issue";
+
+  return {
+    format,
+    formatValid: format !== null,
+    urlValid,
+    bearerRequired,
+    bearerConfigured,
+    configured:
+      format !== null &&
+      urlValid &&
+      (!bearerRequired || bearerConfigured)
+  };
+}
+
 function boundedInteger(
   value: string | undefined,
   fallback: number,
@@ -313,9 +380,8 @@ export function getPublicBetaSafetyConfiguration(
     monitorSecretConfigured &&
     cleanupCronConfigured &&
     env.CLAIMGRAPH_MONITOR_SECRET?.trim() !== env.CRON_SECRET?.trim();
-  const operationsNotificationConfigured = hasValidOperationsWebhookUrl(
-    env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL
-  );
+  const operationsNotification = validateOperationsNotificationConfiguration(env);
+  const operationsNotificationConfigured = operationsNotification.configured;
   const canonicalOriginConfigured = hasValidCanonicalPublicOrigin(
     env.CLAIMGRAPH_PUBLIC_ORIGIN ??
       env.NEXT_PUBLIC_APP_URL ??
@@ -353,7 +419,18 @@ export function getPublicBetaSafetyConfiguration(
         ? ["CLAIMGRAPH_MONITOR_SECRET must differ from CRON_SECRET"]
         : []),
       ...(hosted && !operationsNotificationConfigured
-        ? ["CLAIMGRAPH_OPERATIONS_WEBHOOK_URL"]
+        ? [
+            ...(!operationsNotification.formatValid
+              ? ["CLAIMGRAPH_OPERATIONS_WEBHOOK_FORMAT"]
+              : []),
+            ...(!operationsNotification.urlValid
+              ? ["CLAIMGRAPH_OPERATIONS_WEBHOOK_URL"]
+              : []),
+            ...(operationsNotification.bearerRequired &&
+                !operationsNotification.bearerConfigured
+              ? ["CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN"]
+              : [])
+          ]
         : []),
       ...(production && !canonicalOriginConfigured
         ? ["CLAIMGRAPH_PUBLIC_ORIGIN"]
