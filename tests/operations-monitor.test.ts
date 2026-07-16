@@ -29,6 +29,7 @@ const ENV_KEYS = [
   "DATABASE_URL",
   "CRON_SECRET",
   "CLAIMGRAPH_MONITOR_SECRET",
+  "CLAIMGRAPH_OPERATIONS_WEBHOOK_FORMAT",
   "CLAIMGRAPH_OPERATIONS_WEBHOOK_URL",
   "CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN",
   "CLAIMGRAPH_OPERATIONS_WEBHOOK_TIMEOUT_MS",
@@ -106,6 +107,7 @@ describe("privacy-minimal operations monitoring", () => {
     process.env.CLAIMGRAPH_DATA_DIR = testDataDir;
     process.env.CLAIMGRAPH_STORAGE_DRIVER = "local";
     delete process.env.DATABASE_URL;
+    delete process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_FORMAT;
     delete process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL;
     delete process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN;
   });
@@ -434,6 +436,84 @@ describe("privacy-minimal operations monitoring", () => {
     });
     expect(firstPayload).not.toHaveProperty("notification");
     expect(firstPayload).not.toHaveProperty("workspaceId");
+  });
+
+  it("creates a bounded private GitHub issue from only the aggregate payload", async () => {
+    process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_FORMAT = "github-issue";
+    process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL =
+      "https://api.github.com/repos/example/private-operations/issues";
+    process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN =
+      "SECRET_GITHUB_TOKEN_CANARY_MUST_NOT_LEAK";
+    const now = new Date("2026-07-16T07:20:00.000Z");
+    const alert = snapshot({
+      checkedAt: now.toISOString(),
+      status: "critical",
+      alertCode: "cleanup-jobs-dead"
+    });
+    alert.notification.lastFailureCode =
+      "SECRET_NOTIFICATION_CANARY_MUST_NOT_LEAK";
+    const snapshotWithFutureSecret = {
+      ...alert,
+      futureInternalSecret: "SECRET_FUTURE_CANARY_MUST_NOT_LEAK",
+      workspaceId: "workspace-secret-canary",
+      runId: "run-secret-canary"
+    } as OperationsMonitorSnapshot;
+    const fetchImpl = vi.fn(async (
+      _input: string | URL | Request,
+      _init?: RequestInit
+    ) => new Response(null, { status: 201 }));
+
+    await expect(deliverOperationsNotification({
+      now,
+      snapshot: snapshotWithFutureSecret,
+      fetchImpl: fetchImpl as unknown as typeof fetch
+    })).resolves.toEqual({ kind: "delivered" });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const [url, request] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe(
+      "https://api.github.com/repos/example/private-operations/issues"
+    );
+    expect(request).toMatchObject({
+      method: "POST",
+      cache: "no-store",
+      redirect: "error",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: "Bearer SECRET_GITHUB_TOKEN_CANARY_MUST_NOT_LEAK",
+        "Content-Type": "application/json",
+        "User-Agent": "ClaimGraph-Operations-Notifier/1.0",
+        "X-GitHub-Api-Version": "2022-11-28"
+      }
+    });
+
+    const issue = JSON.parse(String(request?.body)) as {
+      title: string;
+      body: string;
+    };
+    expect(Object.keys(issue).sort()).toEqual(["body", "title"]);
+    expect(issue.title).toBe("[ClaimGraph operations] CRITICAL alert");
+    expect(issue.title.length).toBeLessThanOrEqual(120);
+    expect(issue.body.length).toBeLessThanOrEqual(24_000);
+    const aggregateMatch = issue.body.match(/```json\n([\s\S]+)\n```$/u);
+    expect(aggregateMatch).not.toBeNull();
+    const aggregate = JSON.parse(aggregateMatch![1]!);
+    expect(aggregate).toEqual({
+      schemaVersion: 1,
+      kind: "alert",
+      checkedAt: now.toISOString(),
+      status: "critical",
+      alerts: alert.alerts,
+      health: alert.health,
+      cleanup: alert.cleanup,
+      provider: alert.provider,
+      events: alert.events
+    });
+    expect(issue.body).not.toContain("SECRET_GITHUB_TOKEN_CANARY_MUST_NOT_LEAK");
+    expect(issue.body).not.toContain("SECRET_NOTIFICATION_CANARY_MUST_NOT_LEAK");
+    expect(issue.body).not.toContain("SECRET_FUTURE_CANARY_MUST_NOT_LEAK");
+    expect(issue.body).not.toContain("workspace-secret-canary");
+    expect(issue.body).not.toContain("run-secret-canary");
   });
 
   it("claims concurrent notification attempts with a durable single-flight lease", async () => {

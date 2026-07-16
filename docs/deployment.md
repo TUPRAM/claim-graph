@@ -49,8 +49,15 @@ Before enabling anonymous traffic, confirm all of the following:
 - `CLAIMGRAPH_PUBLIC_ORIGIN` is the exact public HTTPS origin.
 - Control and session secrets contain at least 32 random bytes.
 - `CLAIMGRAPH_MONITOR_SECRET` is set and differs from `CRON_SECRET`.
-- `CLAIMGRAPH_OPERATIONS_WEBHOOK_URL` is a private HTTPS receiver; configure
-  `CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN` when the receiver supports it.
+- `CLAIMGRAPH_OPERATIONS_WEBHOOK_URL` is a private HTTPS receiver. The default
+  `CLAIMGRAPH_OPERATIONS_WEBHOOK_FORMAT=generic` posts the aggregate JSON
+  payload directly; configure `CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN` when
+  the receiver supports it.
+- An optional `github-issue` format may target only
+  `https://api.github.com/repos/<owner>/<private-operations-repository>/issues`.
+  It requires a short-lived, repository-scoped bearer token with only Issues
+  write access. The resulting issue contains the same bounded aggregate
+  notification and no workspace, run, file, source, IP, or cleanup-job IDs.
 - The authenticated cleanup and independent notification schedules are
   installed. Cleanup produces the heartbeat; `/api/internal/notify` consumes
   monitor state later in the day so a missed cleanup run can raise an alert.
