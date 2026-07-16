@@ -17,6 +17,17 @@ const exampleQuestions = [
 export default async function HomePage() {
   const runtime = getClaimGraphRuntimeInfo();
   const runtimeConfig = getClaimGraphRuntimeConfig();
+  const supportsFileIntake = !isHostedFullModeFileIntakeBlocked({
+    mode: runtime.mode
+  });
+  const manualSourceLabel = runtime.supportsUrlIntake
+    ? supportsFileIntake ? "links or files" : "public links"
+    : supportsFileIntake ? "files" : null;
+  const intakeDescription = manualSourceLabel
+    ? `Ask a contested question. Add ${manualSourceLabel} when you want stronger grounding.`
+    : runtime.supportsWebSearch
+      ? "Ask a contested question. ClaimGraph can search the public web for grounding."
+      : "Ask a contested question to create an argument map you can inspect.";
 
   return (
     <main className="landing-shell landing-shell--minimal">
@@ -40,18 +51,14 @@ export default async function HomePage() {
         <div className="minimal-home__center" id="map-question">
           <p className="minimal-home__brand">ClaimGraph</p>
           <h1 id="minimal-home-title">What disagreement should we map?</h1>
-          <p className="minimal-home__lede">
-            Ask a contested question. Add links or files when you want stronger grounding.
-          </p>
+          <p className="minimal-home__lede">{intakeDescription}</p>
           <QuestionComposer
             variant="command"
             defaultQuestion={DEFAULT_DEMO_QUESTION}
             runtime={{
               supportsUrlIntake: runtime.supportsUrlIntake,
               supportsWebSearch: runtime.supportsWebSearch,
-              supportsFileIntake: !isHostedFullModeFileIntakeBlocked({
-                mode: runtime.mode
-              })
+              supportsFileIntake
             }}
             defaultSettings={runtimeConfig.defaultWorkspaceSettings}
             exampleQuestions={exampleQuestions}
