@@ -205,6 +205,122 @@ describe("hosted ClaimGraphStore on ephemeral PostgreSQL", () => {
     await database.close();
   });
 
+  it("serves the read-only demo from an empty hosted database without persisting it", async () => {
+    const workspace = await store.getWorkspace("demo");
+    const run = await store.getRun("run_demo");
+    const latestRun = await store.getLatestRunForWorkspace("demo");
+    const graphRecord = await store.getWorkspaceGraphForRun("run_demo");
+    const payload = await store.getWorkspaceGraphPayload("demo");
+
+    expect(workspace).toMatchObject({
+      id: "demo",
+      question: "Should cities ban cars downtown?"
+    });
+    expect(run).toMatchObject({
+      id: "run_demo",
+      workspaceId: "demo",
+      status: "completed"
+    });
+    expect(latestRun).toEqual(run);
+    await expect(store.getActiveRunForWorkspace("demo")).resolves.toBeNull();
+    expect(graphRecord).toMatchObject({
+      origin: "starter",
+      mode: "demo",
+      provider: "starter",
+      runId: "run_demo"
+    });
+    expect(graphRecord?.sources.length).toBeGreaterThan(0);
+    expect(graphRecord?.snippets.length).toBeGreaterThan(0);
+    expect(payload).toMatchObject({
+      workspace: { id: "demo" },
+      run: { id: "run_demo", workspaceId: "demo", status: "completed" },
+      latestRun: { id: "run_demo" },
+      activeRun: null,
+      graphRun: { id: "run_demo" },
+      evidence: null,
+      claimInventory: null,
+      latestRunArtifacts: null,
+      inProgressArtifacts: null,
+      starterMode: true,
+      graphBuild: {
+        origin: "starter",
+        mode: "demo",
+        provider: "starter",
+        runId: "run_demo"
+      }
+    });
+    expect(payload?.run).toEqual(payload?.graphRun);
+    expect(payload?.run?.metrics?.sourceCount).toBe(payload?.sources.length);
+    expect(payload?.run?.metrics?.snippetCount).toBe(payload?.snippets.length);
+    expect(payload?.graph.question).toBe(workspace?.question);
+    expect(payload?.sources.some((source) => source.domain === "demo.local")).toBe(
+      true
+    );
+    expect(
+      payload?.snippets.every((snippet) => snippet.origin === "starter_curated")
+    ).toBe(true);
+    await expect(store.getEvidencePackForRun("run_demo")).resolves.toBeNull();
+    await expect(store.getClaimInventoryForRun("run_demo")).resolves.toBeNull();
+    await expect(store.getWorkspaceFiles("demo")).resolves.toEqual([]);
+
+    vi.doMock("@/lib/server/storage/store-factory", () => ({
+      getClaimGraphStore: vi.fn(async () => store),
+      isHostedClaimGraphStoreSelected: vi.fn(() => true)
+    }));
+    const { GET } = await import("@/app/api/workspaces/[workspaceId]/graph/route");
+    const response = await GET(
+      new Request("https://claimgraph.example/api/workspaces/demo/graph"),
+      { params: Promise.resolve({ workspaceId: "demo" }) }
+    );
+    const publicPayload = (await response.json()) as {
+      workspace: { id: string };
+      run: { id: string; workspaceId: string; status: string };
+      latestRun: { id: string };
+      activeRun: unknown;
+      graphRun: { id: string };
+      sources: unknown[];
+      snippets: unknown[];
+      starterMode: boolean;
+      canWrite: boolean;
+    };
+
+    expect(response.status).toBe(200);
+    expect(publicPayload).toMatchObject({
+      workspace: { id: "demo" },
+      run: { id: "run_demo", workspaceId: "demo", status: "completed" },
+      latestRun: { id: "run_demo" },
+      activeRun: null,
+      graphRun: { id: "run_demo" },
+      starterMode: true,
+      canWrite: false
+    });
+    expect(publicPayload.sources.length).toBeGreaterThan(0);
+    expect(publicPayload.snippets.length).toBeGreaterThan(0);
+
+    const counts = await database.query<{
+      workspace_count: number;
+      run_count: number;
+      graph_count: number;
+      artifact_count: number;
+      file_count: number;
+    }>(`
+      SELECT
+        (SELECT count(*)::integer FROM claimgraph_workspaces) AS workspace_count,
+        (SELECT count(*)::integer FROM claimgraph_runs) AS run_count,
+        (SELECT count(*)::integer FROM claimgraph_graph_records) AS graph_count,
+        (SELECT count(*)::integer FROM claimgraph_artifact_records) AS artifact_count,
+        (SELECT count(*)::integer FROM claimgraph_workspace_files) AS file_count
+    `);
+
+    expect(counts.rows).toEqual([{
+      workspace_count: 0,
+      run_count: 0,
+      graph_count: 0,
+      artifact_count: 0,
+      file_count: 0
+    }]);
+  });
+
   it("migrates pre-sequence hosted runs without retaining an older active run", async () => {
     const migrationDatabase = new PGlite();
 

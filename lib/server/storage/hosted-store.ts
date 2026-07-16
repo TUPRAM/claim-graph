@@ -19,6 +19,14 @@ import {
 } from "@/lib/claimgraph/config";
 import { getReadyHostedSql as getReadySql } from "@/lib/server/storage/hosted-schema";
 import { getWorkspaceDeletionCleanupJobId } from "@/lib/server/cleanup-job-identity";
+import {
+  buildSyntheticDemoRun,
+  buildSyntheticDemoWorkspace,
+  isSyntheticDemoRunId,
+  isSyntheticDemoWorkspaceId,
+  SYNTHETIC_DEMO_RUN_ID,
+  SYNTHETIC_DEMO_TIMESTAMP
+} from "@/lib/server/synthetic-demo-run";
 import type {
   ClaimInventoryRecord,
   EvidencePackRecord,
@@ -1382,6 +1390,70 @@ function buildStarterGraphRecord(workspace: Workspace): WorkspaceGraphRecord {
   };
 }
 
+function buildSyntheticDemoGraphRecord() {
+  const workspace = buildSyntheticDemoWorkspace();
+
+  return {
+    ...buildStarterGraphRecord(workspace),
+    createdAt: SYNTHETIC_DEMO_TIMESTAMP,
+    responseId: "starter-demo",
+    runId: SYNTHETIC_DEMO_RUN_ID
+  } satisfies WorkspaceGraphRecord;
+}
+
+function buildValidatedGraph(
+  graphRecord: WorkspaceGraphRecord,
+  claimInventory: ClaimInventoryRecord | null
+) {
+  const repairedGraph = repairLiveGraphDisagreementClusters({
+    graph: graphRecord.graph,
+    claimInventory: claimInventory?.claimInventory ?? null
+  });
+  const reviewGraph = enhanceGraphReviewLabels({
+    graph: repairedGraph,
+    sources: graphRecord.sources,
+    snippets: graphRecord.snippets
+  });
+
+  return validateClaimGraphArtifacts({
+    graph: reviewGraph,
+    sources: graphRecord.sources,
+    snippets: graphRecord.snippets
+  });
+}
+
+function buildSyntheticDemoGraphPayload() {
+  const workspace = buildSyntheticDemoWorkspace();
+  const run = buildSyntheticDemoRun();
+  const graphRecord = buildSyntheticDemoGraphRecord();
+
+  return {
+    workspace: clone(workspace),
+    run: clone(run),
+    latestRun: clone(run),
+    activeRun: null,
+    graphRun: clone(run),
+    graph: clone(buildValidatedGraph(graphRecord, null)),
+    sources: clone(graphRecord.sources),
+    snippets: clone(graphRecord.snippets),
+    files: [],
+    evidence: null,
+    claimInventory: null,
+    latestRunArtifacts: null,
+    inProgressArtifacts: null,
+    starterMode: true,
+    runtime: getClaimGraphRuntimeInfo(),
+    graphBuild: {
+      origin: graphRecord.origin,
+      mode: graphRecord.mode,
+      provider: graphRecord.provider,
+      model: graphRecord.model,
+      responseId: graphRecord.responseId,
+      runId: graphRecord.runId
+    }
+  } satisfies WorkspaceGraphPayload;
+}
+
 async function getGraphRecordFromHosted(workspaceId: string) {
   const sql = await getReadySql();
   const rows = (await sql.query(
@@ -2064,20 +2136,7 @@ async function buildGraphPayload(
   const claimInventory = graphRunId
     ? await hostedClaimGraphStore.getClaimInventoryForRun(graphRunId)
     : null;
-  const repairedGraph = repairLiveGraphDisagreementClusters({
-    graph: effectiveGraphRecord.graph,
-    claimInventory: claimInventory?.claimInventory ?? null
-  });
-  const reviewGraph = enhanceGraphReviewLabels({
-    graph: repairedGraph,
-    sources: effectiveGraphRecord.sources,
-    snippets: effectiveGraphRecord.snippets
-  });
-  const graph = validateClaimGraphArtifacts({
-    graph: reviewGraph,
-    sources: effectiveGraphRecord.sources,
-    snippets: effectiveGraphRecord.snippets
-  });
+  const graph = buildValidatedGraph(effectiveGraphRecord, claimInventory);
   const graphRun = graphRunId ? await getRunFromHosted(graphRunId) : null;
   const latestRunArtifacts =
     latestRun && latestRun.id !== graphRun?.id
@@ -2160,6 +2219,10 @@ export const hostedClaimGraphStore: ClaimGraphStore = {
     return clone(workspace);
   },
   async getWorkspace(workspaceId) {
+    if (isSyntheticDemoWorkspaceId(workspaceId)) {
+      return clone(buildSyntheticDemoWorkspace());
+    }
+
     const workspace = await getWorkspaceFromHosted(workspaceId);
     return workspace ? clone(workspace) : null;
   },
@@ -2249,14 +2312,26 @@ export const hostedClaimGraphStore: ClaimGraphStore = {
     throw new Error("Could not acquire the workspace analysis run after repeated conflicts.");
   },
   async getRun(runId) {
+    if (isSyntheticDemoRunId(runId)) {
+      return clone(buildSyntheticDemoRun());
+    }
+
     const run = await getRunFromHosted(runId);
     return run ? clone(run) : null;
   },
   async getLatestRunForWorkspace(workspaceId) {
+    if (isSyntheticDemoWorkspaceId(workspaceId)) {
+      return clone(buildSyntheticDemoRun());
+    }
+
     const run = await getLatestRunForWorkspaceFromHosted(workspaceId);
     return run ? clone(run) : null;
   },
   async getActiveRunForWorkspace(workspaceId) {
+    if (isSyntheticDemoWorkspaceId(workspaceId)) {
+      return null;
+    }
+
     const run = await getActiveRunForWorkspaceFromHosted(workspaceId);
     return run ? clone(run) : null;
   },
@@ -2458,6 +2533,10 @@ export const hostedClaimGraphStore: ClaimGraphStore = {
     );
   },
   async getWorkspaceFiles(workspaceId) {
+    if (isSyntheticDemoWorkspaceId(workspaceId)) {
+      return [];
+    }
+
     return getWorkspaceFilesFromHosted(workspaceId);
   },
   async saveWorkspaceGraph(workspaceId, record) {
@@ -2580,10 +2659,18 @@ export const hostedClaimGraphStore: ClaimGraphStore = {
     throw new Error("Graph completion conflicted repeatedly; retry the operation.");
   },
   async getWorkspaceGraphForRun(runId) {
+    if (isSyntheticDemoRunId(runId)) {
+      return clone(buildSyntheticDemoGraphRecord());
+    }
+
     const record = await getWorkspaceGraphForRunFromHosted(runId);
     return record ? clone(record) : null;
   },
   async getWorkspaceGraphPayload(workspaceId) {
+    if (isSyntheticDemoWorkspaceId(workspaceId)) {
+      return buildSyntheticDemoGraphPayload();
+    }
+
     const workspace = await getWorkspaceFromHosted(workspaceId);
 
     if (!workspace) {
@@ -2642,10 +2729,18 @@ export const hostedClaimGraphStore: ClaimGraphStore = {
     return clone(normalizedRecord);
   },
   async getEvidencePackForRun(runId) {
+    if (isSyntheticDemoRunId(runId)) {
+      return null;
+    }
+
     const record = await getArtifactRecordForRun<unknown>(runId, "evidence_pack");
     return record ? tryNormalizeEvidencePackRecord(record).record : null;
   },
   async getClaimInventoryForRun(runId) {
+    if (isSyntheticDemoRunId(runId)) {
+      return null;
+    }
+
     const record = await getArtifactRecordForRun<unknown>(runId, "claim_inventory");
     return record ? tryReadClaimInventoryRecord(record) : null;
   },
