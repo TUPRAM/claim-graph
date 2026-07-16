@@ -7,6 +7,10 @@ import {
 } from "@/lib/server/public-beta-policy";
 import { getClaimGraphStorageDriver } from "@/lib/server/storage/config";
 import { getReadyHostedSql } from "@/lib/server/storage/hosted-schema";
+import {
+  tryRecordOperationalEvent,
+  type OperationalEventType
+} from "@/lib/server/operational-events";
 
 export type PublicBetaRateLimitScope =
   | "dev-login"
@@ -186,6 +190,32 @@ function rateDecision(input: {
   };
 }
 
+function deniedRateLimitEvent(
+  scope: PublicBetaRateLimitScope
+): OperationalEventType | null {
+  switch (scope) {
+    case "workspace-create":
+    case "workspace-create-global":
+      return "workspace-creation-429";
+    case "workspace-analysis":
+      return "analysis-limit-429";
+    case "paid-analysis":
+      return "paid-analysis-ceiling-refusal";
+    case "workspace-export":
+    case "workspace-export-global":
+      return "export-429";
+    case "workspace-file-mutation":
+    case "workspace-file-mutation-global":
+    case "workspace-upload-bytes":
+      return "file-mutation-429";
+    case "dev-login":
+    case "dev-login-global":
+      return "developer-login-429";
+    default:
+      return null;
+  }
+}
+
 async function consumeHostedRateLimit(input: {
   scope: PublicBetaRateLimitScope;
   subjectHash: string;
@@ -329,9 +359,17 @@ export async function consumePublicBetaRateLimit(input: {
     nowMs
   };
 
-  return getClaimGraphStorageDriver() === "hosted"
+  const decision = getClaimGraphStorageDriver() === "hosted"
     ? consumeHostedRateLimit(args)
     : consumeLocalRateLimit(args);
+  const resolved = await decision;
+  const eventType = resolved.allowed ? null : deniedRateLimitEvent(input.scope);
+
+  if (eventType) {
+    await tryRecordOperationalEvent({ eventType, now: new Date(nowMs) });
+  }
+
+  return resolved;
 }
 
 function requestFingerprintHash(value: string) {
@@ -557,10 +595,20 @@ export async function updatePublicBetaOperatorOverrides(
       `,
       [updatedAt, JSON.stringify(patchWithTimestamp)]
     )) as OperatorControlRow[];
-    return jsonValue<PublicBetaOperatorOverrides>(rows[0]!.data);
+    const overrides = jsonValue<PublicBetaOperatorOverrides>(rows[0]!.data);
+
+    if (Object.prototype.hasOwnProperty.call(patch, "analysisEnabled")) {
+      await tryRecordOperationalEvent({
+        eventType: "kill-switch-changed",
+        value: patch.analysisEnabled ? 1 : 0,
+        now: new Date(updatedAt)
+      });
+    }
+
+    return overrides;
   }
 
-  return withClaimGraphDatabase((db) => {
+  const overrides = withClaimGraphDatabase((db) => {
     const transaction = db.transaction(() => {
       const row = db.prepare(
         "SELECT data FROM public_beta_operator_controls WHERE id = 'public-beta'"
@@ -578,6 +626,16 @@ export async function updatePublicBetaOperatorOverrides(
     });
     return transaction.immediate();
   });
+
+  if (Object.prototype.hasOwnProperty.call(patch, "analysisEnabled")) {
+    await tryRecordOperationalEvent({
+      eventType: "kill-switch-changed",
+      value: patch.analysisEnabled ? 1 : 0,
+      now: new Date(updatedAt)
+    });
+  }
+
+  return overrides;
 }
 
 export async function getEffectivePublicBetaControls() {
@@ -636,6 +694,10 @@ export async function acquireProviderLease(input: {
   const controls = await getEffectivePublicBetaControls();
 
   if (!controls.analysisEnabled) {
+    await tryRecordOperationalEvent({
+      eventType: "analysis-kill-switch-refusal",
+      now: input.now
+    });
     return { acquired: false, lease: null };
   }
 
@@ -672,13 +734,22 @@ export async function acquireProviderLease(input: {
       [lease.acquiredAt, lease.id, lease.runId, lease.expiresAt, limit]
     )) as ProviderLeaseRow[];
 
-    return {
+    const result = {
       acquired: rows.length === 1,
       lease: rows[0] ? normalizeLease(rows[0]) : null
     };
+
+    if (!result.acquired) {
+      await tryRecordOperationalEvent({
+        eventType: "provider-capacity-refusal",
+        now
+      });
+    }
+
+    return result;
   }
 
-  return withClaimGraphDatabase((db) => {
+  const result = withClaimGraphDatabase((db) => {
     const transaction = db.transaction(() => {
       db.prepare("DELETE FROM public_beta_provider_leases WHERE expires_at <= ?")
         .run(lease.acquiredAt);
@@ -699,6 +770,15 @@ export async function acquireProviderLease(input: {
 
     return transaction.immediate();
   });
+
+  if (!result.acquired) {
+    await tryRecordOperationalEvent({
+      eventType: "provider-capacity-refusal",
+      now
+    });
+  }
+
+  return result;
 }
 
 export async function releaseProviderLease(leaseId: string) {

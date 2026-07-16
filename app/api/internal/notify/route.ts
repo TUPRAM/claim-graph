@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireCronApiAuthorization } from "@/lib/server/internal-api-auth";
-import { drainDueCleanupJobs } from "@/lib/server/retention-cleanup";
+import { tryDeliverOperationsNotification } from "@/lib/server/operations-monitor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,16 +8,21 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const unauthorized = requireCronApiAuthorization(
     request,
-    "Cleanup authorization required."
+    "Notification scheduler authorization required."
   );
 
   if (unauthorized) {
     return unauthorized;
   }
 
-  const result = await drainDueCleanupJobs();
+  const notification = await tryDeliverOperationsNotification();
+  const status = notification.kind === "failed" ||
+    notification.kind === "not-configured"
+    ? 503
+    : 200;
 
-  return NextResponse.json(result, {
+  return NextResponse.json({ notification }, {
+    status,
     headers: {
       "Cache-Control": "no-store"
     }

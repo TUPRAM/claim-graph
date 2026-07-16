@@ -23,6 +23,8 @@ const originalOpenModelApiKey = process.env.OPEN_MODEL_API_KEY;
 const originalHfToken = process.env.HF_TOKEN;
 const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 const originalCronSecret = process.env.CRON_SECRET;
+const originalMonitorSecret = process.env.CLAIMGRAPH_MONITOR_SECRET;
+const originalOperationsWebhookUrl = process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL;
 
 function restoreEnv() {
   if (originalStorageDriver === undefined) {
@@ -108,6 +110,18 @@ function restoreEnv() {
   } else {
     process.env.CRON_SECRET = originalCronSecret;
   }
+
+  if (originalMonitorSecret === undefined) {
+    delete process.env.CLAIMGRAPH_MONITOR_SECRET;
+  } else {
+    process.env.CLAIMGRAPH_MONITOR_SECRET = originalMonitorSecret;
+  }
+
+  if (originalOperationsWebhookUrl === undefined) {
+    delete process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL;
+  } else {
+    process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL = originalOperationsWebhookUrl;
+  }
 }
 
 describe("production health endpoint", () => {
@@ -128,6 +142,8 @@ describe("production health endpoint", () => {
     delete process.env.HF_TOKEN;
     delete process.env.OPENAI_API_KEY;
     delete process.env.CRON_SECRET;
+    delete process.env.CLAIMGRAPH_MONITOR_SECRET;
+    delete process.env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL;
   });
 
   afterAll(() => {
@@ -238,6 +254,8 @@ describe("production health endpoint", () => {
         missingConfiguration: [
           "CLAIMGRAPH_ABUSE_HASH_SECRET",
           "CRON_SECRET",
+          "CLAIMGRAPH_MONITOR_SECRET",
+          "CLAIMGRAPH_OPERATIONS_WEBHOOK_URL",
           "DEV_MODE_PASSWORD_HASH",
           "DEV_MODE_SESSION_SECRET"
         ]

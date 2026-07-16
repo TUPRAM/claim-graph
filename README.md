@@ -137,8 +137,9 @@ artifacts, and graph-bound public snapshots.
   decompression, and extracted-text budgets.
 - Workspace creation, analysis, exports, uploads, paid runs, and provider
   concurrency have durable ceilings.
-- A protected operations lane can pause analysis and inspect retryable cleanup
-  without exposing those controls publicly.
+- A protected operations lane can pause analysis, inspect aggregate health and
+  retryable cleanup, and deliver independent cleanup-heartbeat alerts without
+  exposing those controls publicly.
 - Public payloads use allowlisted schemas and redact internal metadata.
 
 See [SECURITY.md](SECURITY.md) for responsible vulnerability reporting.

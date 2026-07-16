@@ -29,8 +29,9 @@ The hosted path requires:
 - the durable workflow runner;
 - one configured analysis provider;
 - a canonical public HTTPS origin;
-- strong secrets for abuse-control hashing, cleanup authentication, and the
-  protected developer session.
+- strong secrets for abuse-control hashing, cleanup authentication, the
+  read-only operations monitor, and the protected developer session;
+- a private HTTPS operations-notification webhook.
 
 Use [`.env.example`](../.env.example) as the configuration inventory. It
 contains safe placeholders only; real values belong in the hosting platform's
@@ -47,7 +48,12 @@ Before enabling anonymous traffic, confirm all of the following:
 - The durable runner is configured and can complete a source-backed run.
 - `CLAIMGRAPH_PUBLIC_ORIGIN` is the exact public HTTPS origin.
 - Control and session secrets contain at least 32 random bytes.
-- The authenticated cleanup schedule is installed.
+- `CLAIMGRAPH_MONITOR_SECRET` is set and differs from `CRON_SECRET`.
+- `CLAIMGRAPH_OPERATIONS_WEBHOOK_URL` is a private HTTPS receiver; configure
+  `CLAIMGRAPH_OPERATIONS_WEBHOOK_BEARER_TOKEN` when the receiver supports it.
+- The authenticated cleanup and independent notification schedules are
+  installed. Cleanup produces the heartbeat; `/api/internal/notify` consumes
+  monitor state later in the day so a missed cleanup run can raise an alert.
 - Creation, analysis, export, upload, paid-run, and provider-concurrency limits
   have explicit production values.
 - Retention periods match the published privacy notice.
@@ -55,7 +61,10 @@ Before enabling anonymous traffic, confirm all of the following:
 
 The anonymous health route intentionally exposes only coarse status and a
 timestamp. Detailed component health is available only to the protected
-developer session or the cleanup bearer secret.
+developer session or the cleanup bearer secret. The privacy-minimal operations
+snapshot at `/api/internal/monitor` uses only the distinct
+`CLAIMGRAPH_MONITOR_SECRET` bearer, returns no workspace, IP, file, or cleanup
+job identifiers, and disables caching.
 
 ## Build and start
 
@@ -111,6 +120,10 @@ production-equivalent services and validate:
 11. Inspect public graph, run, source, and snippet responses for internal-field
     leakage.
 12. Drain cleanup jobs through the authenticated scheduler.
+13. Read the protected monitor snapshot with its dedicated bearer and invoke
+    the separately scheduled `/api/internal/notify` route with `CRON_SECRET`;
+    verify that a changed alert, a delivery retry, a stale cleanup heartbeat,
+    and a recovery reach the private operations webhook.
 
 Do not treat the curated demo as proof that hosted analysis, persistence, or
 cleanup is configured correctly.

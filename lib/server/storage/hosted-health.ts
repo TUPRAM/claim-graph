@@ -13,7 +13,9 @@ const REQUIRED_HOSTED_TABLES = [
   "claimgraph_rate_limit_buckets",
   "claimgraph_idempotency_keys",
   "claimgraph_operator_controls",
-  "claimgraph_provider_leases"
+  "claimgraph_provider_leases",
+  "claimgraph_operational_event_buckets",
+  "claimgraph_operational_notification_state"
 ] as const;
 
 interface InformationSchemaTableRow {
@@ -59,7 +61,9 @@ export async function checkHostedStorageHealth() {
         'claimgraph_rate_limit_buckets',
         'claimgraph_idempotency_keys',
         'claimgraph_operator_controls',
-        'claimgraph_provider_leases'
+        'claimgraph_provider_leases',
+        'claimgraph_operational_event_buckets',
+        'claimgraph_operational_notification_state'
       )
   `)) as InformationSchemaTableRow[];
   const presentTables = new Set(rows.map((row) => row.table_name));

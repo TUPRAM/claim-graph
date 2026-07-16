@@ -42,7 +42,7 @@ type LegacyStoreSnapshot = {
 };
 
 export type ClaimGraphDatabase = Database.Database;
-export const CURRENT_DATABASE_SCHEMA_VERSION = 5;
+export const CURRENT_DATABASE_SCHEMA_VERSION = 7;
 
 const CURRENT_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS workspaces (
@@ -286,6 +286,48 @@ const schemaMigrations: SchemaMigration[] = [
 
         CREATE INDEX IF NOT EXISTS cleanup_jobs_due_idx
           ON cleanup_jobs (status, next_attempt_at ASC, created_at ASC);
+      `);
+    }
+  },
+  {
+    version: 6,
+    description: "Add privacy-minimal operational event buckets and notification state.",
+    apply(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS operational_event_buckets (
+          event_type TEXT NOT NULL,
+          window_started_at TEXT NOT NULL,
+          occurrence_count INTEGER NOT NULL,
+          value_total INTEGER NOT NULL,
+          last_seen_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          PRIMARY KEY (event_type, window_started_at)
+        );
+
+        CREATE INDEX IF NOT EXISTS operational_event_expiry_idx
+          ON operational_event_buckets (expires_at ASC);
+
+        CREATE TABLE IF NOT EXISTS operational_notification_state (
+          id TEXT PRIMARY KEY,
+          last_status TEXT NOT NULL,
+          last_fingerprint TEXT NOT NULL,
+          last_attempt_at TEXT,
+          last_success_at TEXT,
+          last_failure_at TEXT,
+          last_failure_code TEXT
+        );
+      `);
+    }
+  },
+  {
+    version: 7,
+    description: "Add a durable single-flight lease for operations notifications.",
+    apply(db) {
+      db.exec(`
+        ALTER TABLE operational_notification_state
+          ADD COLUMN delivery_lease_id TEXT;
+        ALTER TABLE operational_notification_state
+          ADD COLUMN delivery_lease_expires_at TEXT;
       `);
     }
   }

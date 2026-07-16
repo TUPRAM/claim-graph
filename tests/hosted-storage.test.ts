@@ -99,7 +99,9 @@ describe("hosted storage boundary", () => {
       "claimgraph_snippets",
       "claimgraph_workspace_files",
       "claimgraph_artifact_records",
-      "claimgraph_cleanup_jobs"
+      "claimgraph_cleanup_jobs",
+      "claimgraph_operational_event_buckets",
+      "claimgraph_operational_notification_state"
     ];
 
     for (const table of requiredTables) {
