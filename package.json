@@ -23,18 +23,18 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
-    "@vercel/blob": "^2.4.0",
-    "@xyflow/react": "12.10.2",
+    "@vercel/blob": "^2.6.1",
+    "@xyflow/react": "12.11.2",
     "better-sqlite3": "12.11.1",
     "dagre": "0.8.5",
     "geist": "^1.7.2",
     "html-to-image": "1.11.13",
     "next": "16.2.10",
-    "openai": "6.33.0",
+    "openai": "6.47.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "workflow": "4.6.0",
-    "zod": "4.3.6"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
