@@ -13,7 +13,7 @@
     "postbuild": "node scripts/check-readiness-nft-trace.mjs",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=4",
     "test:watch": "vitest",
     "audit:security": "node scripts/audit-production-dependencies.mjs",
     "runtime:check": "node scripts/check-runtime-readiness.mjs",
