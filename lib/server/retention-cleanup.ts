@@ -16,6 +16,7 @@ import { getClaimGraphStore } from "@/lib/server/storage/store-factory";
 import { withClaimGraphDatabase } from "@/lib/server/database";
 import { pruneExpiredPublicBetaControlRecords } from "@/lib/server/public-beta-control-store";
 import { throwIfStagingRehearsalFault } from "@/lib/server/staging-rehearsal";
+import { tryRecordOperationalEvent } from "@/lib/server/operational-events";
 
 export type CleanupJobType =
   | "workspace_delete"
@@ -510,7 +511,7 @@ async function failCleanupJob(job: CleanupJob, error: unknown, now: Date) {
       `,
       [job.id, status, errorMessage, nextAttemptAt]
     );
-    return;
+    return status;
   }
 
   withClaimGraphDatabase((db) => {
@@ -520,6 +521,7 @@ async function failCleanupJob(job: CleanupJob, error: unknown, now: Date) {
       WHERE id = ?
     `).run(status, errorMessage, nextAttemptAt, job.id);
   });
+  return status;
 }
 
 async function processCleanupJob(job: CleanupJob, now: Date) {
@@ -668,13 +670,17 @@ export async function runDueCleanupJobs(input?: {
     status: "completed" | "deferred" | "failed";
     error?: string;
   }> = [];
+  let deadFailureCount = 0;
 
   for (const job of jobs) {
     try {
       const status = await processCleanupJob(job, now);
       results.push({ id: job.id, status });
     } catch (error) {
-      await failCleanupJob(job, error, now);
+      const failureStatus = await failCleanupJob(job, error, now);
+      if (failureStatus === "dead") {
+        deadFailureCount += 1;
+      }
       results.push({
         id: job.id,
         status: "failed",
@@ -683,11 +689,38 @@ export async function runDueCleanupJobs(input?: {
     }
   }
 
+  const completedCount = results.filter(
+    (result) => result.status === "completed"
+  ).length;
+  const failedCount = results.filter((result) => result.status === "failed").length;
+
+  if (completedCount > 0) {
+    await tryRecordOperationalEvent({
+      eventType: "cleanup-job-completed",
+      value: completedCount,
+      now
+    });
+  }
+  if (failedCount - deadFailureCount > 0) {
+    await tryRecordOperationalEvent({
+      eventType: "cleanup-job-failed",
+      value: failedCount - deadFailureCount,
+      now
+    });
+  }
+  if (deadFailureCount > 0) {
+    await tryRecordOperationalEvent({
+      eventType: "cleanup-job-dead",
+      value: deadFailureCount,
+      now
+    });
+  }
+
   return {
     claimedCount: jobs.length,
-    completedCount: results.filter((result) => result.status === "completed").length,
+    completedCount,
     deferredCount: results.filter((result) => result.status === "deferred").length,
-    failedCount: results.filter((result) => result.status === "failed").length,
+    failedCount,
     results
   };
 }
@@ -812,6 +845,11 @@ export async function drainDueCleanupJobs(input?: {
       break;
     }
   }
+
+  await tryRecordOperationalEvent({
+    eventType: "cleanup-heartbeat",
+    value: aggregate.claimedCount
+  });
 
   return {
     ...aggregate,

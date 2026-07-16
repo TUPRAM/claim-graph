@@ -25,6 +25,7 @@ import {
   getPublicBetaSafetyConfiguration,
   publicBetaPrivacyCopy
 } from "@/lib/server/public-beta-policy";
+import { getOperationalEventSummary } from "@/lib/server/operational-events";
 import {
   drainDueCleanupJobs,
   getCleanupBacklogSummary,
@@ -119,6 +120,15 @@ describe("durable public-beta controls", () => {
       db.prepare("SELECT subject_hash FROM public_beta_rate_limit_buckets").all()
     );
     expect(JSON.stringify(persisted)).not.toContain("203.0.113.42");
+    await expect(getOperationalEventSummary({
+      since: new Date("2026-07-12T00:00:00.000Z"),
+      now: new Date("2026-07-12T00:01:00.000Z")
+    })).resolves.toEqual([
+      expect.objectContaining({
+        eventType: "workspace-creation-429",
+        occurrenceCount: 1
+      })
+    ]);
   });
 
   it("rejects a first weighted charge that exceeds its bucket ceiling", async () => {
@@ -211,9 +221,27 @@ describe("durable public-beta controls", () => {
     await releaseProviderLease(first.lease!.id);
     expect((await acquireProviderLease({ runId: "another-run" })).acquired).toBe(true);
 
-    await updatePublicBetaOperatorOverrides({ analysisEnabled: false });
+    const disabled = await updatePublicBetaOperatorOverrides({ analysisEnabled: false });
     expect((await getEffectivePublicBetaControls()).analysisEnabled).toBe(false);
     expect((await acquireProviderLease({ runId: "disabled-run" })).acquired).toBe(false);
+
+    const events = await getOperationalEventSummary();
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        eventType: "kill-switch-changed",
+        occurrenceCount: 1,
+        valueTotal: 0,
+        lastSeenAt: disabled.updatedAt
+      }),
+      expect.objectContaining({
+        eventType: "analysis-kill-switch-refusal",
+        occurrenceCount: 1
+      }),
+      expect.objectContaining({
+        eventType: "provider-capacity-refusal",
+        occurrenceCount: 1
+      })
+    ]));
   });
 
   it("rate-limits repeated invalid workspace bodies before parsing them", async () => {
@@ -371,6 +399,18 @@ describe("durable public-beta controls", () => {
     expect(drained.claimedCount).toBe(30);
     expect(drained.completedCount).toBe(30);
     expect(drained.backlog.dueCount).toBe(0);
+    const events = await getOperationalEventSummary();
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        eventType: "cleanup-heartbeat",
+        occurrenceCount: 1,
+        valueTotal: 30
+      }),
+      expect.objectContaining({
+        eventType: "cleanup-job-completed",
+        valueTotal: 30
+      })
+    ]));
   });
 
   it("marks upload TTL cleanup to invalidate any graph that cited the removed file", async () => {
@@ -462,9 +502,23 @@ describe("durable public-beta controls", () => {
     process.env.CRON_SECRET = "cron-test-secret-with-at-least-32-bytes";
     expect((await runCleanupCron(new Request("http://localhost/api/internal/cleanup"))).status)
       .toBe(401);
-    expect((await runCleanupCron(new Request("http://localhost/api/internal/cleanup", {
+    const cleanupResponse = await runCleanupCron(new Request("http://localhost/api/internal/cleanup", {
       headers: { Authorization: "Bearer cron-test-secret-with-at-least-32-bytes" }
-    }))).status).toBe(200);
+    }));
+    expect(cleanupResponse.status).toBe(200);
+    await expect(cleanupResponse.json()).resolves.toMatchObject({
+      claimedCount: 0,
+      completedCount: 0
+    });
+    await expect(getOperationalEventSummary()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "cleanup-heartbeat",
+          occurrenceCount: 1,
+          valueTotal: 0
+        })
+      ])
+    );
 
     const copy = publicBetaPrivacyCopy();
     expect(copy).toContain("Raw uploads and private storage URLs are not downloadable");
@@ -512,6 +566,8 @@ describe("durable public-beta controls", () => {
     expect(safety.missingConfiguration).toEqual([
       "CLAIMGRAPH_ABUSE_HASH_SECRET",
       "CRON_SECRET",
+      "CLAIMGRAPH_MONITOR_SECRET",
+      "CLAIMGRAPH_OPERATIONS_WEBHOOK_URL",
       "CLAIMGRAPH_PUBLIC_ORIGIN"
     ]);
 
@@ -519,6 +575,41 @@ describe("durable public-beta controls", () => {
     expect((await runCleanupCron(new Request("http://localhost/api/internal/cleanup", {
       headers: { Authorization: "Bearer short" }
     }))).status).toBe(401);
+  });
+
+  it("requires a distinct monitor secret and an HTTPS notification target in hosted mode", () => {
+    const base: NodeJS.ProcessEnv = {
+      ...process.env,
+      NODE_ENV: "production",
+      CLAIMGRAPH_STORAGE_DRIVER: "hosted",
+      CLAIMGRAPH_ABUSE_HASH_SECRET:
+        "abuse-secret-with-at-least-thirty-two-bytes",
+      CRON_SECRET: "cleanup-secret-with-at-least-thirty-two-bytes",
+      CLAIMGRAPH_MONITOR_SECRET:
+        "monitor-secret-with-at-least-thirty-two-bytes",
+      CLAIMGRAPH_OPERATIONS_WEBHOOK_URL:
+        "https://operations.example.test/claimgraph",
+      CLAIMGRAPH_PUBLIC_ORIGIN: "https://claimgraph.example"
+    };
+
+    expect(getPublicBetaSafetyConfiguration(base)).toMatchObject({
+      ready: true,
+      monitorSecretConfigured: true,
+      monitorSecretDistinct: true,
+      operationsNotificationConfigured: true,
+      missingConfiguration: []
+    });
+
+    expect(getPublicBetaSafetyConfiguration({
+      ...base,
+      CLAIMGRAPH_MONITOR_SECRET: base.CRON_SECRET
+    }).missingConfiguration).toContain(
+      "CLAIMGRAPH_MONITOR_SECRET must differ from CRON_SECRET"
+    );
+    expect(getPublicBetaSafetyConfiguration({
+      ...base,
+      CLAIMGRAPH_OPERATIONS_WEBHOOK_URL: "http://operations.example.test/hook"
+    }).missingConfiguration).toContain("CLAIMGRAPH_OPERATIONS_WEBHOOK_URL");
   });
 
   it("fails closed for hosted full-mode files until provider cleanup is durable", () => {

@@ -13,6 +13,7 @@ import {
   scheduleExportRetention
 } from "@/lib/server/retention-cleanup";
 import { getPublicBetaPolicy } from "@/lib/server/public-beta-policy";
+import { tryRecordOperationalEvent } from "@/lib/server/operational-events";
 import { getClaimGraphStore } from "@/lib/server/storage/store-factory";
 import { requireWorkspaceMutation } from "@/lib/server/workspace-capability";
 import {
@@ -224,6 +225,10 @@ export async function POST(
       artifactKey: artifact.key,
       artifactSizeBytes: artifact.sizeBytes,
       artifactContentType: artifact.contentType
+    });
+    await tryRecordOperationalEvent({
+      eventType: "export-completed",
+      value: artifact.sizeBytes
     });
   } catch (error) {
     try {

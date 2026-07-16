@@ -28,6 +28,7 @@ import {
   isHostedFullModeFileIntakeBlocked
 } from "@/lib/server/provider-file-retention";
 import { cancelWorkflowRunBestEffort } from "@/lib/server/workflow-control";
+import { tryRecordOperationalEvent } from "@/lib/server/operational-events";
 
 async function getWorkspaceId(
   context: { params: Promise<{ workspaceId: string }> }
@@ -237,6 +238,9 @@ export async function POST(
   const policy = getPublicBetaPolicy();
 
   if (!controls.analysisEnabled) {
+    await tryRecordOperationalEvent({
+      eventType: "analysis-kill-switch-refusal"
+    });
     await releaseAnalysisIdempotency(idempotencyControl);
     return NextResponse.json(
       { error: "Analysis is temporarily disabled by the operator." },
@@ -247,6 +251,9 @@ export async function POST(
   const capacity = await getProviderCapacitySnapshot();
 
   if (!capacity.available) {
+    await tryRecordOperationalEvent({
+      eventType: "provider-capacity-refusal"
+    });
     await releaseAnalysisIdempotency(idempotencyControl);
     return throttledAnalysisResponse({
       error: "Analysis capacity is currently full. Try again shortly.",

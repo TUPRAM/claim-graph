@@ -20,6 +20,19 @@ export function hasValidCanonicalPublicOrigin(value: string | undefined) {
   }
 }
 
+export function hasValidOperationsWebhookUrl(value: string | undefined) {
+  if (!value?.trim()) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
 function boundedInteger(
   value: string | undefined,
   fallback: number,
@@ -293,6 +306,16 @@ export function getPublicBetaSafetyConfiguration(
     env.CLAIMGRAPH_ABUSE_HASH_SECRET
   );
   const cleanupCronConfigured = hasStrongPublicBetaSecret(env.CRON_SECRET);
+  const monitorSecretConfigured = hasStrongPublicBetaSecret(
+    env.CLAIMGRAPH_MONITOR_SECRET
+  );
+  const monitorSecretDistinct =
+    monitorSecretConfigured &&
+    cleanupCronConfigured &&
+    env.CLAIMGRAPH_MONITOR_SECRET?.trim() !== env.CRON_SECRET?.trim();
+  const operationsNotificationConfigured = hasValidOperationsWebhookUrl(
+    env.CLAIMGRAPH_OPERATIONS_WEBHOOK_URL
+  );
   const canonicalOriginConfigured = hasValidCanonicalPublicOrigin(
     env.CLAIMGRAPH_PUBLIC_ORIGIN ??
       env.NEXT_PUBLIC_APP_URL ??
@@ -304,15 +327,34 @@ export function getPublicBetaSafetyConfiguration(
     production,
     abuseHashConfigured,
     cleanupCronConfigured,
+    monitorSecretConfigured,
+    monitorSecretDistinct,
+    operationsNotificationConfigured,
     canonicalOriginConfigured,
     ready:
-      (!hosted || (abuseHashConfigured && cleanupCronConfigured)) &&
+      (!hosted || (
+        abuseHashConfigured &&
+        cleanupCronConfigured &&
+        monitorSecretConfigured &&
+        monitorSecretDistinct &&
+        operationsNotificationConfigured
+      )) &&
       (!production || canonicalOriginConfigured),
     missingConfiguration: [
       ...(hosted && !abuseHashConfigured
         ? ["CLAIMGRAPH_ABUSE_HASH_SECRET"]
         : []),
       ...(hosted && !cleanupCronConfigured ? ["CRON_SECRET"] : []),
+      ...(hosted && !monitorSecretConfigured
+        ? ["CLAIMGRAPH_MONITOR_SECRET"]
+        : []),
+      ...(hosted && monitorSecretConfigured && cleanupCronConfigured &&
+          !monitorSecretDistinct
+        ? ["CLAIMGRAPH_MONITOR_SECRET must differ from CRON_SECRET"]
+        : []),
+      ...(hosted && !operationsNotificationConfigured
+        ? ["CLAIMGRAPH_OPERATIONS_WEBHOOK_URL"]
+        : []),
       ...(production && !canonicalOriginConfigured
         ? ["CLAIMGRAPH_PUBLIC_ORIGIN"]
         : [])
