@@ -33,7 +33,7 @@
     "openai": "6.47.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "workflow": "4.6.0",
+    "workflow": "4.8.9",
     "zod": "4.4.3"
   },
   "devDependencies": {
