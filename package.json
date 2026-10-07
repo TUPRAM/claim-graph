@@ -22,19 +22,19 @@
     "qa:workspace:review": "node scripts/browser-workspace-qa.mjs --review"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.1.0",
-    "@vercel/blob": "^2.6.1",
-    "@xyflow/react": "12.11.2",
+    "@neondatabase/serverless": "^1.2.0",
+    "@vercel/blob": "^2.8.0",
+    "@xyflow/react": "12.12.0",
     "better-sqlite3": "12.11.1",
     "dagre": "0.8.5",
     "geist": "^1.7.2",
     "html-to-image": "1.11.13",
-    "next": "16.2.10",
-    "openai": "6.47.0",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
-    "workflow": "4.6.0",
-    "zod": "4.4.3"
+    "next": "16.3.8",
+    "openai": "6.49.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "workflow": "4.8.12",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
@@ -42,8 +42,8 @@
     "@types/better-sqlite3": "7.6.13",
     "@types/dagre": "0.7.54",
     "@types/node": "25.9.5",
-    "@types/react": "19.2.17",
-    "@types/react-dom": "19.2.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "jsdom": "27.4.0",
     "typescript": "6.0.3",
     "vitest": "4.1.10"
